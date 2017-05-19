@@ -1,15 +1,27 @@
 FSM
 ===
 
-[ ![Codeship Status for ryanfaerman/fsm](https://codeship.com/projects/7529e360-b173-0132-b520-32bd639983ea/status?branch=master)](https://codeship.com/projects/69855) [![GoDoc](https://godoc.org/github.com/ryanfaerman/fsm?status.png)](https://godoc.org/github.com/ryanfaerman/fsm)
+[![build status](https://travis-ci.org/armor5games/fsm.svg)](https://travis-ci.org/armor5games/fsm)
 
+FSM is a fork from
+[github.com/ryanfaerman/fsm](https://github.com/ryanfaerman/fsm)
 
-FSM provides a lightweight finite state machine for Golang. It runs allows any number of transition checks you'd like the it runs them in parallel. It's tested and benchmarked too.
+**From the author:**
+
+> FSM provides a lightweight finite state machine for Golang. It runs
+> allows any number of transition checks you'd like the it runs them
+> in parallel. It's tested and benchmarked too.
+
+**Why we forked:**
+
+We really liked ryanfaerman's go package for a finite state machine
+because it follow [KISS principle](https://en.wikipedia.org/wiki/KISS_principle), 
+but we needed switch `guards` from `bool` to `error`.
 
 ## Install
 
 ```
-go get github.com/ryanfaerman/fsm
+go get github.com/armor5games/fsm
 ```
 
 ## Usage
@@ -20,7 +32,7 @@ package main
 import (
     "log"
     "fmt"
-    "github.com/ryanfaerman/fsm"
+    "github.com/armor5games/fsm"
 )
 
 type Thing struct {
@@ -73,7 +85,8 @@ The `Apply(r *fsm.Ruleset) *fsm.Machine` method is absolutely optional. I like h
 
 Since the rules are applied to the the subject (through the machine) I can have a simple lookup to determine the ruleset that the subject has to follow for a given user. As a result, I rarely need to use any complicated guards but I can if need be. I leave the lookup and the maintaining of independent rulesets as an exercise of the user.
 
-## Benchmarks
+## Benchmarks (from ryanfaerman)
+
 Golang makes it easy enough to benchmark things... why not do a few general benchmarks?
 
 ```shell
@@ -102,5 +115,3 @@ ok  github.com/ryanfaerman/fsm 1.007s
 ```
 
 For the Parallel vs Serial benchmarks I had a guard that slept for 1 second. While I don't imagine most guards will take that long, the point remains true. Some guards will be comparatively slow -- they'll be accessing the database or consulting with some other outside service -- and why not get an answer back as soon as possible?
-
-

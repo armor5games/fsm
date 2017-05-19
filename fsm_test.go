@@ -1,11 +1,13 @@
 package fsm_test
 
 import (
+	"errors"
+	"log"
 	"testing"
 	"time"
 
+	"github.com/armor5games/fsm"
 	"github.com/nbio/st"
-	"github.com/ryanfaerman/fsm"
 )
 
 // Thing is a minimal struct that is an fsm.Stater
@@ -18,27 +20,27 @@ func (t *Thing) SetState(s fsm.State)    { t.State = s }
 
 func TestRulesetTransitions(t *testing.T) {
 	rules := fsm.CreateRuleset(
-		fsm.T{"pending", "started"},
-		fsm.T{"started", "finished"},
+		fsm.T{O: "pending", E: "started"},
+		fsm.T{O: "started", E: "finished"},
 	)
 
 	examples := []struct {
 		subject fsm.Stater
 		goal    fsm.State
-		outcome bool
+		outcome error
 	}{
 		// A Stater is responsible for setting its default state
-		{&Thing{}, "started", false},
-		{&Thing{}, "pending", false},
-		{&Thing{}, "finished", false},
+		{&Thing{}, "started", fsm.InvalidTransition},
+		{&Thing{}, "pending", fsm.InvalidTransition},
+		{&Thing{}, "finished", fsm.InvalidTransition},
 
-		{&Thing{State: "pending"}, "started", true},
-		{&Thing{State: "pending"}, "pending", false},
-		{&Thing{State: "pending"}, "finished", false},
+		{&Thing{State: "pending"}, "started", nil},
+		{&Thing{State: "pending"}, "pending", fsm.InvalidTransition},
+		{&Thing{State: "pending"}, "finished", fsm.InvalidTransition},
 
-		{&Thing{State: "started"}, "started", false},
-		{&Thing{State: "started"}, "pending", false},
-		{&Thing{State: "started"}, "finished", true},
+		{&Thing{State: "started"}, "started", fsm.InvalidTransition},
+		{&Thing{State: "started"}, "pending", fsm.InvalidTransition},
+		{&Thing{State: "started"}, "finished", nil},
 	}
 
 	for i, ex := range examples {
@@ -48,27 +50,27 @@ func TestRulesetTransitions(t *testing.T) {
 
 func TestRulesetParallelGuarding(t *testing.T) {
 	rules := fsm.Ruleset{}
-	rules.AddTransition(fsm.T{"pending", "started"})
-	rules.AddTransition(fsm.T{"started", "finished"})
+	rules.AddTransition(fsm.T{O: "pending", E: "started"})
+	rules.AddTransition(fsm.T{O: "started", E: "finished"})
 
 	// Add two failing rules, the slow should be caught first
-	rules.AddRule(fsm.T{"started", "finished"}, func(subject fsm.Stater, goal fsm.State) bool {
+	rules.AddRule(fsm.T{O: "started", E: "finished"}, func(subject fsm.Stater, goal fsm.State) error {
 		time.Sleep(1 * time.Second)
 		t.Error("Slow rule should have been short-circuited")
-		return false
+		return errors.New("some error")
 	})
 
-	rules.AddRule(fsm.T{"started", "finished"}, func(subject fsm.Stater, goal fsm.State) bool {
-		return false
+	rules.AddRule(fsm.T{O: "started", E: "finished"}, func(subject fsm.Stater, goal fsm.State) error {
+		return errors.New("some error")
 	})
 
-	st.Expect(t, rules.Permitted(&Thing{State: "started"}, "finished"), false)
+	st.Expect(t, rules.Permitted(&Thing{State: "started"}, "finished"), errors.New("some error"))
 }
 
 func TestMachineTransition(t *testing.T) {
 	rules := fsm.Ruleset{}
-	rules.AddTransition(fsm.T{"pending", "started"})
-	rules.AddTransition(fsm.T{"started", "finished"})
+	rules.AddTransition(fsm.T{O: "pending", E: "started"})
+	rules.AddTransition(fsm.T{O: "started", E: "finished"})
 
 	some_thing := Thing{State: "pending"}
 	the_machine := fsm.New(fsm.WithRules(rules), fsm.WithSubject(&some_thing))
@@ -93,23 +95,28 @@ func TestMachineTransition(t *testing.T) {
 
 func BenchmarkRulesetParallelGuarding(b *testing.B) {
 	rules := fsm.Ruleset{}
-	rules.AddTransition(fsm.T{"pending", "started"})
-	rules.AddTransition(fsm.T{"started", "finished"})
+	rules.AddTransition(fsm.T{O: "pending", E: "started"})
+	rules.AddTransition(fsm.T{O: "started", E: "finished"})
 
 	// Add two failing rules, one very slow and the other terribly fast
-	rules.AddRule(fsm.T{"started", "finished"}, func(subject fsm.Stater, goal fsm.State) bool {
+	rules.AddRule(fsm.T{O: "started", E: "finished"}, func(subject fsm.Stater, goal fsm.State) error {
 		time.Sleep(1 * time.Second)
-		return false
+		return errors.New("some error")
 	})
 
-	rules.AddRule(fsm.T{"started", "finished"}, func(subject fsm.Stater, goal fsm.State) bool {
-		return false
+	rules.AddRule(fsm.T{O: "started", E: "finished"}, func(subject fsm.Stater, goal fsm.State) error {
+		return errors.New("some error")
 	})
 
 	b.ResetTimer()
 
+	var err error
+
 	for i := 0; i < b.N; i++ {
-		rules.Permitted(&Thing{State: "started"}, "finished")
+		err = rules.Permitted(&Thing{State: "started"}, "finished")
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
@@ -119,15 +126,20 @@ func BenchmarkRulesetTransitionPermitted(b *testing.B) {
 	// short-circuiting, this should actually be a little bit slower as a result,
 	// depending on the number of guards that must pass.
 	rules := fsm.Ruleset{}
-	rules.AddTransition(fsm.T{"pending", "started"})
-	rules.AddTransition(fsm.T{"started", "finished"})
+	rules.AddTransition(fsm.T{O: "pending", E: "started"})
+	rules.AddTransition(fsm.T{O: "started", E: "finished"})
 
 	some_thing := &Thing{State: "started"}
 
 	b.ResetTimer()
 
+	var err error
+
 	for i := 0; i < b.N; i++ {
-		rules.Permitted(some_thing, "finished")
+		err = rules.Permitted(some_thing, "finished")
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 }
@@ -139,37 +151,47 @@ func BenchmarkRulesetTransitionInvalid(b *testing.B) {
 	// bumping up against the speed of a map lookup itself.
 
 	rules := fsm.Ruleset{}
-	rules.AddTransition(fsm.T{"pending", "started"})
-	rules.AddTransition(fsm.T{"started", "finished"})
+	rules.AddTransition(fsm.T{O: "pending", E: "started"})
+	rules.AddTransition(fsm.T{O: "started", E: "finished"})
 
 	some_thing := &Thing{State: "pending"}
 
 	b.ResetTimer()
 
+	var err error
+
 	for i := 0; i < b.N; i++ {
-		rules.Permitted(some_thing, "finished")
+		err = rules.Permitted(some_thing, "finished")
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
 func BenchmarkRulesetRuleForbids(b *testing.B) {
-	// Here, we explicity create a transition that is forbidden. This simulates an
+	// Here, we explicitly create a transition that is forbidden. This simulates an
 	// otherwise valid transition that would be denied based on a user role or the like.
 	// It should be slower than a standard invalid transition, since we have to
 	// actually execute a function to perform the check. The first guard to
 	// fail (returning false) will short circuit the execution, getting some some speed.
 
 	rules := fsm.Ruleset{}
-	rules.AddTransition(fsm.T{"pending", "started"})
+	rules.AddTransition(fsm.T{O: "pending", E: "started"})
 
-	rules.AddRule(fsm.T{"started", "finished"}, func(subject fsm.Stater, goal fsm.State) bool {
-		return false
+	rules.AddRule(fsm.T{O: "started", E: "finished"}, func(subject fsm.Stater, goal fsm.State) error {
+		return errors.New("some error")
 	})
 
 	some_thing := &Thing{State: "started"}
 
 	b.ResetTimer()
 
+	var err error
+
 	for i := 0; i < b.N; i++ {
-		rules.Permitted(some_thing, "finished")
+		err = rules.Permitted(some_thing, "finished")
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
